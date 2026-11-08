@@ -4,7 +4,6 @@ import { makeApi, esc, fmt, comma, toast, confirmBox } from './api.js';
 const api = makeApi('dt_token');
 const $app = document.getElementById('app');
 const $top = document.getElementById('topbar');
-const DIE = ['', '\u2680', '\u2681', '\u2682', '\u2683', '\u2684', '\u2685'];
 
 const S = {
   cfg: null, me: null, view: 'home', busy: false,
@@ -61,6 +60,7 @@ function currentView() {
   if (!me) return 'auth';
   if (me.status === 'playing' && me.travel) return 'travel';
   if (S.view === 'travel') S.view = 'home';
+  if (S.view === 'school' && (me.status !== 'playing' || me.city !== 'cairo')) S.view = 'home';
   if (S.view === 'home' || (S.view === 'market' && (me.status !== 'playing'))) {
     return { locked: 'gate', complete: 'gate', title: 'title', perished: 'perished', finished: 'finished', playing: 'city' }[me.status] || 'gate';
   }
@@ -80,7 +80,7 @@ function render() {
   const v = currentView();
   renderTop(v);
   const views = { auth: viewAuth, gate: viewGate, title: viewTitle, city: viewCity, market: viewMarket, inventory: viewInventory,
-    caravan: viewCaravan, leaderboard: viewLeaderboard, travel: viewTravel, perished: viewPerished, finished: viewFinished };
+    caravan: viewCaravan, leaderboard: viewLeaderboard, travel: viewTravel, perished: viewPerished, finished: viewFinished, school: viewSchool };
   (views[v] || viewGate)();
 }
 
@@ -91,7 +91,7 @@ function renderTop(v) {
   const traveling = v === 'travel';
   const playing = me.status === 'playing';
   const L = me.levelInfo;
-  const homeActive = ['city', 'gate', 'title', 'perished', 'finished'].includes(v);
+  const homeActive = ['city', 'gate', 'title', 'perished', 'finished', 'school'].includes(v);
   const btn = (id, label, disabled, active) => `<button data-nav="${id}" ${disabled ? 'disabled' : ''} ${active ? 'aria-current="page"' : ''}>${label}</button>`;
   $top.innerHTML = `<div class="topbar-inner">
     <span class="wordmark">Desert Trade</span>
@@ -214,7 +214,7 @@ function viewTitle() {
 function viewCity() {
   const me = S.me, c = city(me.city), left = daysLeft();
   const options = S.cfg.cityOrder.filter((id) => id !== me.city).map((id) => {
-    const r = S.cfg.distances[me.city][id];
+    const r = me.routes[id];
     const tooFar = r.days > left;
     return `<option value="${id}" ${tooFar ? 'disabled' : ''}>${esc(city(id).name)}: ${comma(r.miles)} mi, ${r.days} days${tooFar ? ' (not enough days left)' : ''}</option>`;
   }).join('');
@@ -227,6 +227,7 @@ function viewCity() {
         <button class="btn wood" id="to-inv">Check Inventory</button>
         <button class="btn ghost" id="end">End Level</button>
       </div>
+      ${me.city === 'cairo' ? `<div class="school-card"><div><h3>Trader School</h3><p>Take classes that help you survive the road and strike better deals.</p></div><button class="btn wood" id="to-school">Visit the Trader School</button></div>` : ''}
       <div class="lapis">
         <h3>Plan a journey</h3>
         <p style="margin-bottom:.6rem">Day <strong class="num">${me.day}</strong> of ${me.levelInfo.days}. <strong class="num">${left}</strong> days left in this level.</p>
@@ -243,12 +244,13 @@ function viewCity() {
   document.getElementById('to-inv').onclick = () => go('inventory');
   document.getElementById('end').onclick = endLevelPrompt;
   document.getElementById('depart').onclick = departPrompt;
+  document.getElementById('to-school')?.addEventListener('click', () => go('school'));
 }
 
 async function departPrompt() {
   const to = document.getElementById('dest').value;
   if (!to) return toast('Choose a city to travel to.', 'error');
-  const r = S.cfg.distances[S.me.city][to];
+  const r = S.me.routes[to];
   const ok = await confirmBox(`Leave for ${esc(city(to).name)}?`,
     `<p>The trip takes <strong>${r.days} days</strong> (${comma(r.miles)} miles).</p>
      <p>You are carrying <strong>${inv('food')} lb of food</strong> and <strong>${inv('water')} ${unit('water', inv('water'))} of water</strong>. Is that enough?</p>`,
@@ -270,6 +272,7 @@ async function endLevelPrompt() {
 
 // ---------------------------------------------------------------- market
 function viewMarket() {
+  if (!S.me.marketOpen) return viewQuiz();
   const me = S.me, c = city(me.city), m = S.cfg.markets[me.city];
   const priceOf = (side, id, base) => Math.round(base * (me.haggles[`${side}:${id}`] || 1) * 100) / 100;
   const shop = (side, id, base) => {
@@ -370,6 +373,7 @@ function viewInventory() {
         </tbody></table>
         <p class="hint">Every 25 days of travel uses 1 lb of food and 1 jug of water.</p>
       </div>
+      ${me.skills.length ? `<div><h2>Trader School classes</h2><ul class="skill-list">${me.skills.map((k) => `<li>${esc(S.cfg.skills[k]?.name || k)}</li>`).join('')}</ul></div>` : ''}
       <div><h2>Trade goods</h2><div class="table-wrap"><table><thead><tr><th>Good</th><th class="right">Amount</th><th>Unit</th></tr></thead><tbody>${rows}</tbody></table></div></div>
       ${me.status === 'playing' ? `<div class="row"><button class="btn ghost" id="back">Back to ${esc(city(me.city).name)}</button>${me.travel ? '' : '<button class="btn wood" id="to-market">Go to Market</button>'}</div>` : ''}
     </div>
@@ -459,6 +463,8 @@ const CAMEL = `<svg class="camel" viewBox="0 0 100 70" aria-hidden="true"><g fil
   <path d="M18 38c-5 2-7 8-6 14" stroke="#4b2e1a" stroke-width="2.5" fill="none"/></g>
   <path d="M36 26c6-4 14-4 20 2v8H36z" fill="#1e3a7b" stroke="#c9a048" stroke-width="1.5"/></svg>`;
 
+const tripTotal = (t) => t.days + (t.delay || 0);
+
 function viewTravel() {
   const t = S.me.travel;
   const half = Math.floor(t.days / 2);
@@ -466,11 +472,10 @@ function viewTravel() {
     // fresh trip, or a page reload in the middle of one
     S.travel = t.resolved ? { day: half, phase: 'toEnd' } : { day: 0, phase: 'toHalf' };
   }
-  const total = t.days + (t.extraDays || 0);
   $app.innerHTML = `<div class="parchment travel">
     <h2>Days traveling</h2>
     <div class="counter num" id="ctr">${S.travel.day}</div>
-    <div class="of">of <span id="tot">${total}</span> days from ${esc(city(t.from).name)} to ${esc(city(t.to).name)}</div>
+    <div class="of">of <span id="tot">${tripTotal(t)}</span> days from ${esc(city(t.from).name)} to ${esc(city(t.to).name)}</div>
     <div class="route-strip">
       <svg class="dunes" viewBox="0 0 800 70" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C120 10 220 60 360 34 S620 12 800 38 V70 H0Z" fill="#d9a560"/><path d="M0 56 C160 36 300 70 480 50 S700 44 800 56 V70 H0Z" fill="#c98b45"/></svg>
       <div id="camel-wrap">${CAMEL}</div>
@@ -486,8 +491,7 @@ function viewTravel() {
 
 function placeCamel() {
   const t = S.me.travel; if (!t) return;
-  const total = t.days + (t.extraDays || 0);
-  const pct = 4 + Math.min(1, S.travel.day / Math.max(1, total)) * 88;
+  const pct = 4 + Math.min(1, S.travel.day / Math.max(1, tripTotal(t))) * 88;
   const camel = document.querySelector('.route-strip .camel');
   if (camel) camel.style.left = pct + '%';
   const ctr = document.getElementById('ctr'); if (ctr) ctr.textContent = S.travel.day;
@@ -505,31 +509,63 @@ function runCounter(stopAt, then) {
   }, ms);
 }
 
+// What a revealed choice tile shows after the player picks.
+function tileReveal(id, v) {
+  if (id === 'oasis') return { good: true, text: `+${v}` };
+  if (id === 'mansamusa') return { good: true, text: `${v} lb` };
+  return { good: !!v, text: v ? '\u2713' : '\u2717' };
+}
+
 function showEncounter() {
   S.travel.phase = 'encounter';
   const t = S.me.travel, enc = S.cfg.encounters[t.encounter];
   const box = document.getElementById('enc');
   if (!box) return;
-  if (t.resolved) { // Base Camp: no roll
-    setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-    box.innerHTML = `<div class="encounter"><img src="${enc.image}" alt="${esc(enc.name)}: ${esc(t.outcome?.text || '')}" width="1280" height="720">
+  setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  const img = `<img src="${enc.image}" alt="Encounter: ${esc(enc.name)}" width="1280" height="720">`;
+
+  if (enc.kind === 'none') { // Base Camp: nothing to pick
+    box.innerHTML = `<div class="encounter">${img}
       <div class="outcome good">${esc(t.outcome?.text || 'You rest for a little while.')}</div>
       <button class="btn big" id="cont" style="margin-top:1rem">Continue on your trip</button></div>`;
     document.getElementById('cont').onclick = continueTrip;
     return;
   }
-  setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-  box.innerHTML = `<div class="encounter"><img src="${enc.image}" alt="Encounter: ${esc(enc.name)}" width="1280" height="720">
-    <h3 style="margin-top:1rem">Roll your die and tap the number you rolled</h3>
-    <div class="dice">${[1, 2, 3, 4, 5, 6].map((n) => `<button class="die" data-roll="${n}" aria-label="I rolled a ${n}">${DIE[n]}</button>`).join('')}</div></div>`;
-  box.querySelectorAll('[data-roll]').forEach((b) => b.addEventListener('click', async () => {
-    box.querySelectorAll('.die').forEach((d) => (d.disabled = true));
-    const res = await act('travel/roll', { roll: Number(b.dataset.roll) }, { quiet: true });
-    if (!res) { box.querySelectorAll('.die').forEach((d) => (d.disabled = false)); return; }
+
+  let picker;
+  if (enc.kind === 'choice') { // Ben and James
+    const canGive = inv('food') >= 2 && inv('water') >= 2;
+    picker = `<div class="choice-row">
+      <button class="btn big sell" data-choice="give" ${canGive ? '' : 'disabled'}>Give them supplies</button>
+      <button class="btn big wood" data-choice="leave">Leave them behind</button>
+      <button class="btn big danger" data-choice="money">Get your money back</button>
+    </div>${canGive ? '' : '<p class="hint">You need at least 2 lb of food and 2 jugs of water to share.</p>'}`;
+  } else {
+    picker = `<div class="picks">${[...Array(S.cfg.choices || 10)].map((_, i) => `<button class="pick" data-choice="${i}" aria-label="Choice ${i + 1}"><span class="pick-n">${i + 1}</span><span class="pick-q">?</span></button>`).join('')}</div>`;
+  }
+  box.innerHTML = `<div class="encounter">${img}
+    <h3 style="margin-top:1rem">${esc(enc.prompt)}</h3>
+    ${enc.kind === 'choice' ? '' : '<p class="muted" style="margin:0 auto .5rem">Every choice hides a different result. Pick one.</p>'}
+    <div id="picker">${picker}</div></div>`;
+
+  box.querySelectorAll('[data-choice]').forEach((b) => b.addEventListener('click', async () => {
+    box.querySelectorAll('[data-choice]').forEach((d) => (d.disabled = true));
+    const raw = b.dataset.choice;
+    const res = await act('travel/choose', { choice: enc.kind === 'choice' ? raw : Number(raw) }, { quiet: true });
+    if (!res) { box.querySelectorAll('[data-choice]').forEach((d) => (d.disabled = false)); return; }
     const o = res.outcome;
+    if (o.layout) { // reveal every tile so students see the choices were random
+      box.querySelectorAll('.pick').forEach((el, i) => {
+        const r = tileReveal(t.encounter, o.layout[i]);
+        el.classList.add(r.good ? 'good' : 'bad');
+        if (i === o.pick) el.classList.add('chosen');
+        el.querySelector('.pick-q').textContent = r.text;
+      });
+    }
     const goodish = o.success && !o.perish;
-    box.querySelector('.dice').outerHTML = `<div class="outcome ${goodish ? 'good' : 'bad'}"><strong>You rolled a ${o.roll}.</strong> ${esc(o.text)}</div>
-      <button class="btn big ${o.perish ? 'danger' : ''}" id="cont" style="margin-top:1rem">${o.perish ? 'Continue' : 'Continue on your trip'}</button>`;
+    box.querySelector('#picker').insertAdjacentHTML('afterend', `<div class="outcome ${goodish ? 'good' : 'bad'}">${esc(o.text)}</div>
+      <button class="btn big ${o.perish ? 'danger' : ''}" id="cont" style="margin-top:1rem">${o.perish ? 'Continue' : 'Continue on your trip'}</button>`);
+    if (enc.kind === 'choice') box.querySelector('#picker').remove();
     renderTop('travel');
     document.getElementById('cont').onclick = () => {
       if (o.perish) { S.perishInfo = o.text; go('home'); }
@@ -542,17 +578,77 @@ function continueTrip() {
   document.getElementById('enc').innerHTML = '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
   S.travel.phase = 'toEnd';
-  const t = S.me.travel;
-  document.getElementById('tot').textContent = t.days + (t.extraDays || 0);
+  document.getElementById('tot').textContent = tripTotal(S.me.travel);
   runToEnd();
 }
 
 function runToEnd() {
   const t = S.me.travel;
-  const total = t.days + (t.extraDays || 0);
   const supplyDays = Math.min(inv('food'), inv('water')) * (S.cfg.daysPerRation || 25);
-  const stopAt = total > supplyDays ? Math.max(S.travel.day, supplyDays) : total;
+  const stopAt = t.days > supplyDays ? Math.max(S.travel.day, supplyDays) : tripTotal(t);
   runCounter(stopAt, arrive);
+}
+
+// ---------------------------------------------------------------- market questions
+async function viewQuiz(feedback = null, data = null) {
+  const c = city(S.me.city);
+  if (!data) {
+    $app.innerHTML = `<div class="parchment quiz"><h1>The gate of ${esc(c.name)}\u2019s market</h1><p>Loading…</p></div>`;
+    try { data = await api.post('market/quiz'); } catch (e) { toast(e.message, 'error'); return; }
+    if (data.passed || data.me?.marketOpen) { if (data.me) S.me = data.me; S.me.marketOpen = true; return render(); }
+  }
+  if (currentView() !== 'market') return;
+  const dots = [...Array(data.needed)].map((_, i) => `<span class="dot ${i < data.streak ? 'on' : ''}" aria-hidden="true"></span>`).join('');
+  $app.innerHTML = `<div class="parchment quiz">
+    <h1>The gate of ${esc(c.name)}\u2019s market</h1>
+    <p>The market guard will let you in after you answer <strong>${data.needed} question${data.needed === 1 ? '' : 's'} in a row</strong> correctly. A wrong answer starts the count over.</p>
+    <div class="streak"><span class="dots">${dots}</span><span>${data.streak} of ${data.needed} correct in a row</span></div>
+    ${feedback ? `<div class="outcome ${feedback.good ? 'good' : 'bad'}" style="margin:0 0 1rem">${feedback.html}</div>` : ''}
+    <div class="question">
+      <h2>${esc(data.question.text)}</h2>
+      <div class="answers">${data.question.options.map((o) => `<button class="answer" data-i="${o.i}">${esc(o.text)}</button>`).join('')}</div>
+    </div>
+    <div class="row" style="margin-top:1.5rem"><button class="btn ghost" id="back">Back to ${esc(c.name)}</button></div>
+  </div>`;
+  document.getElementById('back').onclick = () => go('home');
+  $app.querySelectorAll('.answer').forEach((b) => b.addEventListener('click', async () => {
+    $app.querySelectorAll('.answer').forEach((x) => (x.disabled = true));
+    const res = await act('market/answer', { id: data.question.id, choice: Number(b.dataset.i) }, { quiet: true });
+    if (!res) { $app.querySelectorAll('.answer').forEach((x) => (x.disabled = false)); return; }
+    if (res.passed) { toast(`Correct! The ${c.name} market is open.`); S.me.marketOpen = true; return render(); }
+    viewQuiz(res.correct
+      ? { good: true, html: '<strong>Correct!</strong> Here is your next question.' }
+      : { good: false, html: `<strong>Not quite.</strong> The answer was \u201c${esc(res.correctText)}.\u201d Your count starts over.` }, res);
+  }));
+}
+
+// ---------------------------------------------------------------- trader school
+function viewSchool() {
+  const me = S.me, price = me.skillPrice;
+  const cards = S.cfg.skillOrder.map((id) => {
+    const sk = S.cfg.skills[id], owned = me.skills.includes(id);
+    return `<article class="shop ${owned ? 'buys' : 'sells'}">
+      <h3>${esc(sk.name)}</h3>
+      <p class="desc">${esc(sk.desc)}</p>
+      <div class="actions">${owned ? '<span class="haggled good">Class completed</span>'
+        : `<button class="btn" data-skill="${id}" ${me.money < price ? 'disabled' : ''}>Take class for <span class="num">${fmt(price)}</span></button>`}</div>
+    </article>`;
+  }).join('');
+  $app.innerHTML = `<div class="parchment">
+    <div class="market-head">
+      <div><h1>Cairo Trader School</h1>
+      <p class="muted" style="margin:0">Each class costs <strong class="num">${fmt(price)}</strong> during Level ${me.level}. Classes get more expensive in later levels, and what you learn stays with you for the rest of the game.</p></div>
+      <div class="row"><button class="btn ghost" id="back">Back to Cairo</button></div>
+    </div>
+    <p>Bank: <strong class="num">${fmt(me.money)}</strong></p>
+    <div class="shops">${cards}</div>
+  </div>`;
+  document.getElementById('back').onclick = () => go('home');
+  $app.querySelectorAll('[data-skill]').forEach((b) => b.addEventListener('click', async () => {
+    const sk = S.cfg.skills[b.dataset.skill];
+    if (!(await confirmBox(`Take ${esc(sk.name)}?`, `<p>This class costs <strong>${fmt(price)}</strong>. You have ${fmt(me.money)}.</p>`, 'Take class', 'Not now'))) return;
+    if (await act('school/buy', { skill: b.dataset.skill })) render();
+  }));
 }
 
 async function arrive() {

@@ -51,16 +51,22 @@ A trading game for 7th grade World History. Students create a trader, buy goods 
 - Each level opens with a title page showing the days allowed, starting city and instructions.
 - In each city: **Go to Market**, **Check Inventory**, **End Level**, or pick a destination and **Depart**.
 - **Markets** have a Provisions section (food and water), Exports (the city sells, students buy) and Imports (the city buys, students sell). Every shop has a quantity selector and a Haggle button (50/50 chance of 5% better or 5% worse, once per shop per visit). Students can't spend more than they have.
-- **Travel** shows a "Days traveling" counter. Halfway through, a random encounter appears. Students roll a real die and tap the number. The winning numbers are chosen secretly by the server for every trip.
+- **Market questions:** before a market opens, students answer multiple-choice questions about Islam and desert trade. They need as many correct in a row as their level number (Level 3 = 3 in a row). A wrong answer shows the right answer and restarts the count. Questions live in `lib/data.js`. You can turn this off in Game settings.
+- **Trader School** (Cairo only) sells five classes: Oasis Mapping, Hazard Training I, Hazard Training II, Haggle Training and Real Bedouin Training. Prices are $50 in Level 1 and rise $200 per level. Classes last the rest of the game.
+- **Travel** shows a "Days traveling" counter. Halfway through, a random encounter appears. Students pick one of 10 hidden choices; the server shuffles what's behind them for every trip, so there's no "best" button. After they pick, all 10 are revealed.
 
-| Encounter | Chance | Winning faces | If the roll fails |
+| Encounter | Chance | Safe choices | What happens |
 |---|---|---|---|
-| Base Camp | 40% | no roll | — |
-| Extreme Heat | 15% | 4 of 6 | lose all water and perish |
-| Extreme Cold | 15% | 4 of 6 | freeze and perish |
-| Bandits | 10% | 3 of 6 | lose 25% of supplies |
-| Sandstorm | 10% | 4 of 6 | lose 20% of supplies, +2 days |
-| Oasis | 10% | always | gain food and water equal to the roll |
+| Base Camp | whatever is left (45% by default) | no choice | rest and continue |
+| Bandits | 5%, and every trip into Taghaza | 7 of 10 | fail: lose 25% of supplies and 25% of money |
+| Sandstorm | 10% | 6 of 10 | fail: lose 25% of supplies and 25 days |
+| Extreme Heat | 10% | 7 of 10 | fail: lose all water and perish |
+| Extreme Cold | 10% | 7 of 10 | fail: freeze and perish |
+| Oasis | 10% | all 10 | gain 1 to 5 food and water |
+| Mansa Musa | 5% | all 10 | gain 10 to 100 lb of gold |
+| Ben and James | 5%, once per game | 3 named choices | share 2 food and 2 water for $200, leave them, or demand money and perish |
+
+Change any chance or safe-choice count on the teacher page's **Encounters** tab.
 
 - **Supplies:** every 25 days of travel (or part of 25) uses 1 lb food and 1 jug water. A 70-day trip needs 3 of each. Running out means perishing.
 - **Perishing** shows the "sands of time" screen with a button to restart the level with the money and goods they had when it began.
@@ -71,14 +77,19 @@ A trading game for 7th grade World History. Students create a trader, buy goods 
 
 - **Levels:** codes, days, instructions, starting city, starting bonus, early-finish bonus.
 - **Traders:** see everyone's level, status, location, money and goods. Move a trader to any level, reset a forgotten password, remove from a caravan, or delete.
-- **Give bonuses:** money and/or items to one trader, a whole caravan or the whole class, with a reason that appears in their log.
+- **Give bonuses & skills:** money, items and/or a free Trader School class to traders you check off, a whole caravan or the whole class, with a reason that appears in their log. You can also take a class away.
+- **Encounters:** how often each road event happens and how many of the 10 choices are safe.
 - **Caravans:** see members and disband if needed.
 - **Market prices:** edit every buy and sell price, plus food and water, in every city.
-- **Game settings:** starting money, travel speed, whether bandits and sandstorms take only supplies or all cargo, and a reset button for starting fresh with a new class.
+- **Game settings:** starting money, travel speed, market questions on/off, Trader School prices, whether bandits and sandstorms take only supplies or all cargo, and a reset button for starting fresh with a new class.
+
+## Updating from the first version
+
+Replace the files in your GitHub repository with the ones in this zip and commit. Cloudflare redeploys on its own. You don't need to run any SQL: the first time the new version runs, it adds the two new database columns (skills and progress flags) by itself. Existing traders keep their money, goods and levels.
 
 ## Changing things in the code
 
-- City descriptions, item descriptions, distances and encounter odds: `lib/data.js`
+- City descriptions, item descriptions, distances, encounter text, skill descriptions and market questions: `lib/data.js`
 - Game rules and the API: `lib/api.js`
 - Student screens: `public/js/app.js`. Teacher page: `public/js/teacher.js`. Dashboard: `public/js/dashboard.js`
 - Colors and fonts: the top of `public/css/style.css`

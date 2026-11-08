@@ -1,7 +1,3 @@
--- Desert Trade: The Game — D1 database schema
--- Run once: paste into the D1 Console in Cloudflare, or
---   npx wrangler d1 execute desert-trade-db --remote --file=schema.sql
-
 CREATE TABLE IF NOT EXISTS players (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -16,6 +12,8 @@ CREATE TABLE IF NOT EXISTS players (
   travel      TEXT,
   haggles     TEXT NOT NULL DEFAULT '{}',
   caravan_id  INTEGER,
+  skills      TEXT NOT NULL DEFAULT '{}',
+  flags       TEXT NOT NULL DEFAULT '{}',
   created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_players_caravan ON players(caravan_id);

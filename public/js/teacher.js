@@ -28,11 +28,11 @@ async function post(path, body, okMsg) {
 function render() {
   document.getElementById('logout').classList.toggle('hidden', !T.data);
   if (!T.data) return viewLogin();
-  const tabs = [['levels', 'Levels'], ['players', 'Traders'], ['bonus', 'Give bonuses'], ['caravans', 'Caravans'], ['markets', 'Market prices'], ['settings', 'Game settings']];
+  const tabs = [['levels', 'Levels'], ['players', 'Traders'], ['bonus', 'Give bonuses & skills'], ['caravans', 'Caravans'], ['encounters', 'Encounters'], ['markets', 'Market prices'], ['settings', 'Game settings']];
   $app.innerHTML = `<div class="tabs" role="tablist">${tabs.map(([id, l]) => `<button role="tab" data-tab="${id}" aria-selected="${T.tab === id}">${l}</button>`).join('')}</div>
     <div class="parchment" id="panel"></div>`;
   $app.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { T.tab = b.dataset.tab; render(); });
-  ({ levels: tabLevels, players: tabPlayers, bonus: tabBonus, caravans: tabCaravans, markets: tabMarkets, settings: tabSettings })[T.tab]();
+  ({ levels: tabLevels, players: tabPlayers, bonus: tabBonus, caravans: tabCaravans, encounters: tabEncounters, markets: tabMarkets, settings: tabSettings })[T.tab]();
 }
 
 function viewLogin() {
@@ -90,11 +90,12 @@ function tabPlayers() {
   panel.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Traders (${ps.length})</h1><button class="btn ghost small" id="rf">Refresh</button></div>
     <p class="muted">Moving a trader to a level unlocks it for them and starts them fresh in that level\u2019s city. Their money and goods are kept.</p>
     <div class="table-wrap"><table>
-      <thead><tr><th>Trader</th><th>Level</th><th>Status</th><th>City / day</th><th class="right">Bank</th><th>Goods</th><th>Caravan</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Trader</th><th>Level</th><th>Status</th><th>City / day</th><th class="right">Bank</th><th>Goods</th><th>Skills</th><th>Caravan</th><th>Actions</th></tr></thead>
       <tbody>${ps.map((p) => `<tr data-id="${p.id}">
         <td><strong>${esc(p.name)}</strong></td><td>${p.level}</td><td><span class="pill ${p.status}">${STATUS[p.status] || p.status}</span></td>
         <td>${esc(T.data.cities[p.city]?.name || '')}${p.status === 'playing' ? `, day ${p.day}` : ''}</td>
         <td class="right num">${fmt(p.money)}</td><td style="font-size:.92rem;max-width:240px">${goods(p.inventory)}</td>
+        <td style="font-size:.92rem;max-width:200px">${p.skills.map((k) => esc(T.data.skills[k]?.name || k)).join(', ') || '<span class="muted">none</span>'}</td>
         <td>${p.caravan ? esc(p.caravan) : '<span class="muted">none</span>'}</td>
         <td><div class="row" style="flex-wrap:nowrap">
           <select data-lv aria-label="Level for ${esc(p.name)}" style="width:auto">${T.data.levels.map((l, i) => `<option value="${i + 1}" ${p.level === i + 1 ? 'selected' : ''}>L${i + 1}</option>`).join('')}</select>
@@ -102,7 +103,7 @@ function tabPlayers() {
           <button class="btn small wood" data-a="reset_password">Password</button>
           ${p.caravan ? '<button class="btn small ghost" data-a="kick">Kick</button>' : ''}
           <button class="btn small danger" data-a="delete">Delete</button>
-        </div></td></tr>`).join('') || '<tr><td colspan="8">No traders yet.</td></tr>'}</tbody></table></div>`;
+        </div></td></tr>`).join('') || '<tr><td colspan="9">No traders yet.</td></tr>'}</tbody></table></div>`;
   document.getElementById('rf').onclick = load;
   panel.querySelectorAll('[data-a]').forEach((b) => b.onclick = async () => {
     const tr = b.closest('tr'), id = Number(tr.dataset.id), p = ps.find((x) => x.id === id), a = b.dataset.a;
@@ -125,34 +126,82 @@ function tabPlayers() {
 function tabBonus() {
   const panel = document.getElementById('panel');
   const items = Object.entries(T.data.items).map(([id, it]) => `<option value="${id}">${esc(it.name)} (${it.unit})</option>`).join('');
-  panel.innerHTML = `<h1>Give bonuses</h1>
-    <p>Reward great answers, teamwork or participation. Bonuses are kept even if a trader later perishes and restarts the level. Use a negative amount to take money away.</p>
-    <form id="f" style="max-width:720px">
-      <div class="form-grid">
-        <div><label for="tg">Give to</label><select id="tg"><option value="player">One trader</option><option value="caravan">Everyone in a caravan</option><option value="all">All traders</option></select></div>
-        <div id="who-wrap"><label for="who">Who</label><select id="who"></select></div>
+  const skills = T.data.skillOrder.map((id) => `<option value="${id}">${esc(T.data.skills[id].name)}</option>`).join('');
+  panel.innerHTML = `<h1>Give bonuses & skills</h1>
+    <p>Reward great answers, teamwork or participation with money, goods or a free Trader School class. Bonuses are kept even if a trader later perishes and restarts the level. Use a negative amount to take money away.</p>
+    <form id="f" style="max-width:820px">
+      <div class="field"><label for="tg">Give to</label><select id="tg" style="max-width:320px"><option value="players">Traders I choose</option><option value="caravan">Everyone in a caravan</option><option value="all">All traders</option></select></div>
+      <div class="field" id="pick-players">
+        <div class="row" style="justify-content:space-between"><label style="margin:0">Choose traders</label>
+          <span><button type="button" class="btn ghost small" id="sel-all">Select all</button> <button type="button" class="btn ghost small" id="sel-none">Clear</button></span></div>
+        <div class="checklist">${T.data.players.map((p) => `<label class="check"><input type="checkbox" value="${p.id}"> ${esc(p.name)}</label>`).join('') || '<p class="muted">No traders yet.</p>'}</div>
       </div>
+      <div class="field hidden" id="pick-caravan"><label for="cv">Caravan</label><select id="cv" style="max-width:320px">${T.data.caravans.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.members})</option>`).join('') || '<option value="">No caravans</option>'}</select></div>
       <div class="form-grid" style="margin-top:.75rem">
         <div><label for="m">Money ($)</label><input id="m" type="number" step="0.01" value="0"></div>
         <div><label for="it">Item (optional)</label><select id="it"><option value="">No item</option>${items}</select></div>
         <div><label for="q">Item amount</label><input id="q" type="number" min="1" step="1" value="1"></div>
       </div>
+      <div class="form-grid" style="margin-top:.75rem">
+        <div><label for="sk">Trader School skill (optional)</label><select id="sk"><option value="">No skill</option>${skills}</select></div>
+        <div><label for="skm">Skill action</label><select id="skm"><option value="give">Give for free</option><option value="remove">Take away</option></select></div>
+      </div>
       <div class="field"><label for="why">Reason (shows in their log)</label><input id="why" maxlength="120" placeholder="Great map work"></div>
       <div class="field"><button class="btn big">Give bonus</button></div>
     </form>`;
-  const tg = document.getElementById('tg'), who = document.getElementById('who');
-  const fill = () => {
-    document.getElementById('who-wrap').classList.toggle('hidden', tg.value === 'all');
-    who.innerHTML = tg.value === 'caravan'
-      ? T.data.caravans.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.members})</option>`).join('') || '<option value="">No caravans</option>'
-      : T.data.players.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('') || '<option value="">No traders</option>';
+  const tg = document.getElementById('tg');
+  const sync = () => {
+    document.getElementById('pick-players').classList.toggle('hidden', tg.value !== 'players');
+    document.getElementById('pick-caravan').classList.toggle('hidden', tg.value !== 'caravan');
   };
-  tg.onchange = fill; fill();
+  tg.onchange = sync; sync();
+  const boxes = () => [...panel.querySelectorAll('.checklist input')];
+  document.getElementById('sel-all').onclick = () => boxes().forEach((b) => (b.checked = true));
+  document.getElementById('sel-none').onclick = () => boxes().forEach((b) => (b.checked = false));
   document.getElementById('f').onsubmit = async (e) => {
     e.preventDefault();
-    const it = document.getElementById('it').value;
-    const r = await post('teacher/bonus', { target: tg.value, id: Number(who.value), money: Number(document.getElementById('m').value), item: it || null, qty: Number(document.getElementById('q').value), reason: document.getElementById('why').value });
-    if (r) { toast(`Bonus given to ${r.count} trader${r.count === 1 ? '' : 's'}.`); load(); }
+    const ids = boxes().filter((b) => b.checked).map((b) => Number(b.value));
+    if (tg.value === 'players' && !ids.length) return toast('Check at least one trader.', 'error');
+    const it = document.getElementById('it').value, sk = document.getElementById('sk').value;
+    const r = await post('teacher/bonus', {
+      target: tg.value, ids, id: Number(document.getElementById('cv').value),
+      money: Number(document.getElementById('m').value), item: it || null, qty: Number(document.getElementById('q').value),
+      skill: sk || null, remove_skill: document.getElementById('skm').value === 'remove',
+      reason: document.getElementById('why').value,
+    });
+    if (r) { toast(`Done for ${r.count} trader${r.count === 1 ? '' : 's'}.`); load(); }
+  };
+}
+
+// ---------------------------------------------------------------- encounters
+function tabEncounters() {
+  const panel = document.getElementById('panel');
+  const E = T.data.encounters, info = T.data.encounterInfo, n = T.data.choices;
+  const row = (id) => {
+    const k = info[id].kind;
+    if (id === 'basecamp') return `<tr><td><strong>${esc(info[id].name)}</strong></td><td><span id="bc" class="num">${E[id].chance}</span>% <span class="muted">(whatever is left)</span></td><td class="muted">no choice</td></tr>`;
+    return `<tr><td><strong>${esc(info[id].name)}</strong></td>
+      <td><input type="number" min="0" max="100" step="1" data-id="${id}" data-f="chance" value="${E[id].chance}" style="width:6rem"> %</td>
+      <td>${k === 'risk' ? `<input type="number" min="0" max="${n}" step="1" data-id="${id}" data-f="wins" value="${E[id].wins}" style="width:5rem"> safe of ${n}` : k === 'reward' ? '<span class="muted">every choice is a reward</span>' : '<span class="muted">3 named choices</span>'}</td></tr>`;
+  };
+  panel.innerHTML = `<h1>Road encounters</h1>
+    <p>Set how often each event happens on a trip and how many of the ${n} hidden choices are safe. Base Camp automatically gets whatever percent is left so the total is always 100%.</p>
+    <div class="table-wrap"><table style="max-width:760px"><thead><tr><th>Encounter</th><th>Chance per trip</th><th>Safe choices</th></tr></thead>
+      <tbody>${T.data.encounterOrder.map(row).join('')}</tbody></table></div>
+    <p class="hint" style="margin-top:1rem">Fixed rules: every trip into Taghaza meets bandits. Ben and James appear at most once per trader per game. Skills change these odds for the traders who have them (Oasis Mapping, Hazard Training I and II).</p>
+    <div class="row" style="margin-top:1rem"><button class="btn big" id="save">Save encounters</button></div>`;
+  const recalc = () => {
+    const used = [...panel.querySelectorAll('[data-f="chance"]')].reduce((a, i) => a + (Number(i.value) || 0), 0);
+    const bc = document.getElementById('bc');
+    bc.textContent = 100 - used;
+    bc.style.color = used > 100 ? 'var(--danger)' : '';
+  };
+  panel.querySelectorAll('[data-f="chance"]').forEach((i) => i.addEventListener('input', recalc));
+  document.getElementById('save').onclick = async () => {
+    const out = {};
+    panel.querySelectorAll('[data-id]').forEach((i) => { (out[i.dataset.id] ||= {})[i.dataset.f] = Number(i.value); });
+    const r = await post('teacher/encounters', { encounters: out }, 'Encounters saved. New trips use these odds.');
+    if (r) { T.data.encounters = r.encounters; tabEncounters(); }
   };
 }
 
@@ -207,6 +256,13 @@ function tabSettings() {
         <p class="hint">Given once when a trader is created. Level 1 adds its own starting bonus on top (set on the Levels tab).</p></div>
       <div class="field"><label for="spd">Seconds per travel day</label><input id="spd" type="number" min="0.05" max="5" step="0.05" value="${s.seconds_per_day}">
         <p class="hint">1 means the travel counter goes up one day per second. A 117-day trip then takes about 2 minutes. Lower it to speed things up.</p></div>
+      <div class="field"><label class="check"><input type="checkbox" id="qz" ${s.quiz_enabled ? 'checked' : ''}> Students must answer market questions before trading</label>
+        <p class="hint">In each city they need as many correct answers in a row as their level number (Level 3 = 3 in a row).</p></div>
+      <div class="form-grid">
+        <div><label for="sbp">Trader School price in Level 1 ($)</label><input id="sbp" type="number" min="0" step="1" value="${s.skill_base_price}"></div>
+        <div><label for="sps">Price increase per level ($)</label><input id="sps" type="number" min="0" step="1" value="${s.skill_price_step}"></div>
+      </div>
+      <p class="hint">With the defaults, each class costs $50 in Level 1, $250 in Level 2, $450 in Level 3, and so on.</p>
       <div class="field"><label for="ls">Bandits and sandstorms take a share of</label>
         <select id="ls"><option value="supplies" ${s.loss_scope === 'supplies' ? 'selected' : ''}>Supplies only (food and water)</option><option value="all" ${s.loss_scope === 'all' ? 'selected' : ''}>All cargo (supplies and trade goods)</option></select></div>
       <div class="field"><button class="btn big">Save settings</button></div>
@@ -217,7 +273,7 @@ function tabSettings() {
     <button class="btn danger" id="reset">Delete all traders</button>`;
   document.getElementById('f').onsubmit = async (e) => {
     e.preventDefault();
-    const r = await post('teacher/settings', { starting_money: Number(sm.value), seconds_per_day: Number(spd.value), loss_scope: ls.value }, 'Settings saved.');
+    const r = await post('teacher/settings', { starting_money: Number(sm.value), seconds_per_day: Number(spd.value), loss_scope: ls.value, quiz_enabled: qz.checked, skill_base_price: Number(sbp.value), skill_price_step: Number(sps.value) }, 'Settings saved.');
     if (r) T.data.settings = r.settings;
   };
   document.getElementById('reset').onclick = async () => {
