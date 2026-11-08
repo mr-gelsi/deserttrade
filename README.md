@@ -52,13 +52,13 @@ A trading game for 7th grade World History. Students create a trader, buy goods 
 - In each city: **Go to Market**, **Check Inventory**, **End Level**, or pick a destination and **Depart**.
 - **Markets** have a Provisions section (food and water), Exports (the city sells, students buy) and Imports (the city buys, students sell). Every shop has a quantity selector and a Haggle button (50/50 chance of 5% better or 5% worse, once per shop per visit). Students can't spend more than they have.
 - **Market questions:** before a market opens, students answer multiple-choice questions about Islam and desert trade. They need as many correct in a row as their level number (Level 3 = 3 in a row). A wrong answer shows the right answer and restarts the count. Questions live in `lib/data.js`. You can turn this off in Game settings.
-- **Trader School** (Cairo only) sells five classes: Oasis Mapping, Hazard Training I, Hazard Training II, Haggle Training and Real Bedouin Training. Prices are $50 in Level 1 and rise $200 per level. Classes last the rest of the game.
-- **Travel** shows a "Days traveling" counter. Halfway through, a random encounter appears. Students pick one of 10 hidden choices; the server shuffles what's behind them for every trip, so there's no "best" button. After they pick, all 10 are revealed.
+- **Trader School** (Cairo only) sells five classes: Oasis Mapping, Hazard Training I, Hazard Training II, Haggle Training and Real Bedouin Training. Students may take one class per level. Prices are $50 in Level 1 and rise $200 per level. Classes last the rest of the game.
+- **Travel** shows a "Days traveling" counter that always starts at day 0. Every trip has two encounter points, at the halfway and three-quarter marks, each rolled separately. (If the three-quarter roll lands on Base Camp, nothing is shown and the trip just continues.) Students pick one of 10 hidden choices; the server shuffles what's behind them for every trip, so there's no "best" button. After they pick, all 10 are revealed.
 
 | Encounter | Chance | Safe choices | What happens |
 |---|---|---|---|
 | Base Camp | whatever is left (45% by default) | no choice | rest and continue |
-| Bandits | 5%, and every trip into Taghaza | 7 of 10 | fail: lose 25% of supplies and 25% of money |
+| Bandits | 5%, and always at the halfway point of trips into Taghaza | 7 of 10 | fail: lose 25% of supplies and 25% of money |
 | Sandstorm | 10% | 6 of 10 | fail: lose 25% of supplies and 25 days |
 | Extreme Heat | 10% | 7 of 10 | fail: lose all water and perish |
 | Extreme Cold | 10% | 7 of 10 | fail: freeze and perish |

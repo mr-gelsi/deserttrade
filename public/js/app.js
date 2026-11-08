@@ -465,13 +465,18 @@ const CAMEL = `<svg class="camel" viewBox="0 0 100 70" aria-hidden="true"><g fil
 
 const tripTotal = (t) => t.days + (t.delay || 0);
 
+// Where the counter should start when the travel screen opens. A new trip
+// always starts at day 0; after a page reload it resumes at the last
+// encounter the student finished.
+function travelStartDay(t) {
+  const done = t.stops.filter((x) => x.resolved && !x.skip);
+  return done.length ? done[done.length - 1].at : 0;
+}
+const nextStop = (t) => t.stops.find((x) => !x.resolved && !x.skip) || null;
+
 function viewTravel() {
   const t = S.me.travel;
-  const half = Math.floor(t.days / 2);
-  if (!S.travel) {
-    // fresh trip, or a page reload in the middle of one
-    S.travel = t.resolved ? { day: half, phase: 'toEnd' } : { day: 0, phase: 'toHalf' };
-  }
+  if (!S.travel) S.travel = { day: travelStartDay(t), phase: 'moving' };
   $app.innerHTML = `<div class="parchment travel">
     <h2>Days traveling</h2>
     <div class="counter num" id="ctr">${S.travel.day}</div>
@@ -484,9 +489,16 @@ function viewTravel() {
     <div id="enc"></div>
   </div>`;
   placeCamel();
-  if (S.travel.phase === 'toHalf') runCounter(half, showEncounter);
-  else if (S.travel.phase === 'toEnd') runToEnd();
-  else if (S.travel.phase === 'encounter') showEncounter();
+  if (S.travel.phase === 'encounter') showEncounter();
+  else keepTraveling();
+}
+
+// Count to the next encounter stop, or to the end of the trip.
+function keepTraveling() {
+  S.travel.phase = 'moving';
+  const stop = nextStop(S.me.travel);
+  if (stop) runCounter(stop.at, showEncounter);
+  else runToEnd();
 }
 
 function placeCamel() {
@@ -518,22 +530,19 @@ function tileReveal(id, v) {
 
 function showEncounter() {
   S.travel.phase = 'encounter';
-  const t = S.me.travel, enc = S.cfg.encounters[t.encounter];
+  const t = S.me.travel, stop = nextStop(t);
+  if (!stop) return runToEnd();
+  const enc = S.cfg.encounters[stop.encounter];
   const box = document.getElementById('enc');
   if (!box) return;
   setTimeout(() => box.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-  const img = `<img src="${enc.image}" alt="Encounter: ${esc(enc.name)}" width="1280" height="720">`;
-
-  if (enc.kind === 'none') { // Base Camp: nothing to pick
-    box.innerHTML = `<div class="encounter">${img}
-      <div class="outcome good">${esc(t.outcome?.text || 'You rest for a little while.')}</div>
-      <button class="btn big" id="cont" style="margin-top:1rem">Continue on your trip</button></div>`;
-    document.getElementById('cont').onclick = continueTrip;
-    return;
-  }
+  const where = stop === t.stops[0] ? 'Halfway there' : 'Three-quarters of the way there';
+  const img = `<p class="stop-label">${where}</p><img src="${enc.image}" alt="Encounter: ${esc(enc.name)}" width="1280" height="720">`;
 
   let picker;
-  if (enc.kind === 'choice') { // Ben and James
+  if (enc.kind === 'none') { // Base Camp: nothing to pick
+    picker = `<button class="btn big" data-choice="rest">Continue on your trip</button>`;
+  } else if (enc.kind === 'choice') { // Ben and James
     const canGive = inv('food') >= 2 && inv('water') >= 2;
     picker = `<div class="choice-row">
       <button class="btn big sell" data-choice="give" ${canGive ? '' : 'disabled'}>Give them supplies</button>
@@ -544,19 +553,21 @@ function showEncounter() {
     picker = `<div class="picks">${[...Array(S.cfg.choices || 10)].map((_, i) => `<button class="pick" data-choice="${i}" aria-label="Choice ${i + 1}"><span class="pick-n">${i + 1}</span><span class="pick-q">?</span></button>`).join('')}</div>`;
   }
   box.innerHTML = `<div class="encounter">${img}
-    <h3 style="margin-top:1rem">${esc(enc.prompt)}</h3>
-    ${enc.kind === 'choice' ? '' : '<p class="muted" style="margin:0 auto .5rem">Every choice hides a different result. Pick one.</p>'}
-    <div id="picker">${picker}</div></div>`;
+    ${enc.kind === 'none' ? '<div class="outcome good">You stop at a busy base camp to rest your camels.</div>' : `<h3 style="margin-top:1rem">${esc(enc.prompt)}</h3>`}
+    ${enc.kind === 'risk' || enc.kind === 'reward' ? '<p class="muted" style="margin:0 auto .5rem">Every choice hides a different result. Pick one.</p>' : ''}
+    <div id="picker" style="margin-top:1rem">${picker}</div></div>`;
 
   box.querySelectorAll('[data-choice]').forEach((b) => b.addEventListener('click', async () => {
     box.querySelectorAll('[data-choice]').forEach((d) => (d.disabled = true));
     const raw = b.dataset.choice;
-    const res = await act('travel/choose', { choice: enc.kind === 'choice' ? raw : Number(raw) }, { quiet: true });
+    const isTile = enc.kind === 'risk' || enc.kind === 'reward';
+    const res = await act('travel/choose', { choice: isTile ? Number(raw) : raw }, { quiet: true });
     if (!res) { box.querySelectorAll('[data-choice]').forEach((d) => (d.disabled = false)); return; }
     const o = res.outcome;
+    if (enc.kind === 'none') return continueTrip();
     if (o.layout) { // reveal every tile so students see the choices were random
       box.querySelectorAll('.pick').forEach((el, i) => {
-        const r = tileReveal(t.encounter, o.layout[i]);
+        const r = tileReveal(stop.encounter, o.layout[i]);
         el.classList.add(r.good ? 'good' : 'bad');
         if (i === o.pick) el.classList.add('chosen');
         el.querySelector('.pick-q').textContent = r.text;
@@ -577,9 +588,8 @@ function showEncounter() {
 function continueTrip() {
   document.getElementById('enc').innerHTML = '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
-  S.travel.phase = 'toEnd';
   document.getElementById('tot').textContent = tripTotal(S.me.travel);
-  runToEnd();
+  keepTraveling();
 }
 
 function runToEnd() {
@@ -631,22 +641,23 @@ function viewSchool() {
       <h3>${esc(sk.name)}</h3>
       <p class="desc">${esc(sk.desc)}</p>
       <div class="actions">${owned ? '<span class="haggled good">Class completed</span>'
-        : `<button class="btn" data-skill="${id}" ${me.money < price ? 'disabled' : ''}>Take class for <span class="num">${fmt(price)}</span></button>`}</div>
+        : `<button class="btn" data-skill="${id}" ${me.money < price || me.schoolUsed ? 'disabled' : ''}>Take class for <span class="num">${fmt(price)}</span></button>`}</div>
     </article>`;
   }).join('');
   $app.innerHTML = `<div class="parchment">
     <div class="market-head">
       <div><h1>Cairo Trader School</h1>
-      <p class="muted" style="margin:0">Each class costs <strong class="num">${fmt(price)}</strong> during Level ${me.level}. Classes get more expensive in later levels, and what you learn stays with you for the rest of the game.</p></div>
+      <p class="muted" style="margin:0">You may take <strong>one class per level</strong>. Each class costs <strong class="num">${fmt(price)}</strong> during Level ${me.level} and gets more expensive in later levels. What you learn stays with you for the rest of the game.</p></div>
       <div class="row"><button class="btn ghost" id="back">Back to Cairo</button></div>
     </div>
+    ${me.schoolUsed ? `<div class="outcome good" style="margin:0 0 1rem;max-width:none">You already took your class for Level ${me.level}. Come back during the next level to take another.</div>` : ''}
     <p>Bank: <strong class="num">${fmt(me.money)}</strong></p>
     <div class="shops">${cards}</div>
   </div>`;
   document.getElementById('back').onclick = () => go('home');
   $app.querySelectorAll('[data-skill]').forEach((b) => b.addEventListener('click', async () => {
     const sk = S.cfg.skills[b.dataset.skill];
-    if (!(await confirmBox(`Take ${esc(sk.name)}?`, `<p>This class costs <strong>${fmt(price)}</strong>. You have ${fmt(me.money)}.</p>`, 'Take class', 'Not now'))) return;
+    if (!(await confirmBox(`Take ${esc(sk.name)}?`, `<p>This class costs <strong>${fmt(price)}</strong>. You have ${fmt(me.money)}.</p><p>You can only take one class per level, so choose carefully.</p>`, 'Take class', 'Not now'))) return;
     if (await act('school/buy', { skill: b.dataset.skill })) render();
   }));
 }

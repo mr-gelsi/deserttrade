@@ -321,3 +321,4 @@ tr.me td { background: rgba(201, 160, 72, .25); font-weight: 700; }
 label.check { display: flex; align-items: center; gap: .45rem; font-weight: 400; cursor: pointer; }
 label.check input { width: auto; }
 .pick.good .pick-q, .pick.bad .pick-q { font-family: var(--body); font-weight: 700; font-size: clamp(.95rem, 2.4vw, 1.5rem); }
+.stop-label { font-family: var(--display); font-size: 1.5rem; color: var(--dune-deep); margin: 0 auto .5rem; }

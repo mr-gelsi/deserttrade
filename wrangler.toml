@@ -5,4 +5,4 @@ compatibility_date = "2024-09-23"
 [[d1_databases]]
 binding = "DB"
 database_name = "desert-trade-db"
-database_id = "8995c1d4-8b5d-42fa-bf9a-3151d8d3af4f"
+database_id = "PASTE-YOUR-D1-DATABASE-ID-HERE"
