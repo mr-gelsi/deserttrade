@@ -49,11 +49,19 @@ function viewLogin() {
   };
 }
 
-const STATUS = { locked: 'needs level code', title: 'unlocked, not started', playing: 'playing', perished: 'perished', complete: 'done, needs next code', finished: 'finished all levels' };
+const STATUS = { locked: 'needs level code', title: 'unlocked, not started', playing: 'playing', perished: 'perished', failed: 'missed challenge, must retry', complete: 'done, needs next code', finished: 'finished all levels' };
 const cityOptions = (sel) => T.data.cityOrder.map((c) => `<option value="${c}" ${c === sel ? 'selected' : ''}>${esc(T.data.cities[c].name)}</option>`).join('');
 const itemName = (id) => T.data.items[id]?.name || id;
 
 // ---------------------------------------------------------------- levels
+const itemOptions = (cityId, sel) => (T.data.cityImports[cityId] || []).map((it) => `<option value="${it}" ${it === sel ? 'selected' : ''}>${esc(itemName(it))}</option>`).join('');
+const reqRow = (r) => `<div class="req-row row">
+  <span>Sell</span>
+  <select class="req-item" aria-label="Item to sell" style="width:auto;min-width:12rem">${itemOptions(r.city, r.item)}</select>
+  <span>in</span>
+  <select class="req-city" aria-label="City" style="width:auto">${cityOptions(r.city)}</select>
+  <button type="button" class="btn small danger del-req" aria-label="Remove this requirement">Remove</button>
+</div>`;
 function tabLevels() {
   const panel = document.getElementById('panel');
   panel.innerHTML = `<h1>Levels</h1>
@@ -69,13 +77,28 @@ function tabLevels() {
         <div><label>Bonus per unused day ($)</label><input name="early_bonus" type="number" min="0" step="0.01" value="${l.early_bonus}"></div>
       </div>
       <div class="field"><label>Instructions shown on the level title page</label><textarea name="instructions" maxlength="2000">${esc(l.instructions)}</textarea></div>
+      <div class="field"><label>Required sales to complete this level</label>
+        <p class="hint" style="margin-top:0">Students must sell each item in its city before the level ends, or they retry the level. Leave empty for no requirement.</p>
+        <div class="reqs">${(l.requirements || []).map(reqRow).join('')}</div>
+        <button type="button" class="btn ghost small add-req">+ Add required sale</button>
+      </div>
     </div>`).join('')}
     <div class="row" style="margin-top:1rem"><button class="btn big">Save levels</button></div></form>`;
+  // Required-sale rows: changing the city refreshes the item list to what that city buys.
+  panel.addEventListener('change', (e) => {
+    if (!e.target.matches('.req-city')) return;
+    e.target.closest('.req-row').querySelector('.req-item').innerHTML = itemOptions(e.target.value);
+  });
+  panel.addEventListener('click', (e) => {
+    if (e.target.matches('.add-req')) e.target.previousElementSibling.insertAdjacentHTML('beforeend', reqRow({ city: 'cairo', item: '' }));
+    if (e.target.matches('.del-req')) e.target.closest('.req-row').remove();
+  });
   document.getElementById('f').onsubmit = async (e) => {
     e.preventDefault();
     const levels = [...panel.querySelectorAll('.level-card')].map((card) => {
       const g = (n) => card.querySelector(`[name="${n}"]`).value;
-      return { name: g('name'), password: g('password'), days: Number(g('days')), start_city: g('start_city'), start_bonus: Number(g('start_bonus')), early_bonus: Number(g('early_bonus')), instructions: g('instructions') };
+      const requirements = [...card.querySelectorAll('.req-row')].map((r) => ({ city: r.querySelector('.req-city').value, item: r.querySelector('.req-item').value }));
+      return { name: g('name'), password: g('password'), days: Number(g('days')), start_city: g('start_city'), start_bonus: Number(g('start_bonus')), early_bonus: Number(g('early_bonus')), instructions: g('instructions'), requirements };
     });
     const r = await post('teacher/levels', { levels }, 'Levels saved.');
     if (r) T.data.levels = r.levels;

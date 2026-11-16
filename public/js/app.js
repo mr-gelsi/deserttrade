@@ -52,6 +52,12 @@ async function act(path, body, { quiet = false } = {}) {
 const city = (id) => S.cfg.cities[id] || { name: id };
 const item = (id) => S.cfg.items[id] || { name: id, unit: 'lb', desc: '' };
 const unit = (id, q) => { const u = item(id).unit; return u === 'lb' ? 'lb' : u === 'jug' ? (q === 1 ? 'jug' : 'jugs') : u === 'sheep' ? 'sheep' : (q === 1 ? u : u + 's'); };
+// Checklist of the sales this level requires.
+const challengeLine = (r) => `Sell <strong>${esc(item(r.item).name)}</strong> in <strong>${esc(city(r.city).name)}</strong>`;
+function challengeList(reqs, showDone = true) {
+  if (!reqs || !reqs.length) return '<p style="margin:0">No required sales this level. Trade anywhere you like!</p>';
+  return `<ul class="challenge">${reqs.map((r) => `<li class="${showDone && r.done ? 'done' : ''}"><span class="box" aria-hidden="true">${showDone && r.done ? '\u2713' : ''}</span>${challengeLine(r)}${showDone ? `<span class="sr">${r.done ? ' (done)' : ' (not done yet)'}</span>` : ''}</li>`).join('')}</ul>`;
+}
 const daysLeft = () => (S.me.levelInfo ? S.me.levelInfo.days - S.me.day : 0);
 const inv = (id) => S.me.inventory[id] || 0;
 
@@ -62,7 +68,7 @@ function currentView() {
   if (S.view === 'travel') S.view = 'home';
   if (S.view === 'school' && (me.status !== 'playing' || me.city !== 'cairo')) S.view = 'home';
   if (S.view === 'home' || (S.view === 'market' && (me.status !== 'playing'))) {
-    return { locked: 'gate', complete: 'gate', title: 'title', perished: 'perished', finished: 'finished', playing: 'city' }[me.status] || 'gate';
+    return { locked: 'gate', complete: 'gate', title: 'title', perished: 'perished', failed: 'failed', finished: 'finished', playing: 'city' }[me.status] || 'gate';
   }
   return S.view;
 }
@@ -80,7 +86,7 @@ function render() {
   const v = currentView();
   renderTop(v);
   const views = { auth: viewAuth, gate: viewGate, title: viewTitle, city: viewCity, market: viewMarket, inventory: viewInventory,
-    caravan: viewCaravan, leaderboard: viewLeaderboard, travel: viewTravel, perished: viewPerished, finished: viewFinished, school: viewSchool };
+    caravan: viewCaravan, leaderboard: viewLeaderboard, travel: viewTravel, perished: viewPerished, failed: viewFailed, finished: viewFinished, school: viewSchool };
   (views[v] || viewGate)();
 }
 
@@ -91,7 +97,7 @@ function renderTop(v) {
   const traveling = v === 'travel';
   const playing = me.status === 'playing';
   const L = me.levelInfo;
-  const homeActive = ['city', 'gate', 'title', 'perished', 'finished', 'school'].includes(v);
+  const homeActive = ['city', 'gate', 'title', 'perished', 'failed', 'finished', 'school'].includes(v);
   const btn = (id, label, disabled, active) => `<button data-nav="${id}" ${disabled ? 'disabled' : ''} ${active ? 'aria-current="page"' : ''}>${label}</button>`;
   $top.innerHTML = `<div class="topbar-inner">
     <span class="wordmark">Desert Trade</span>
@@ -200,7 +206,9 @@ function viewTitle() {
       ${L.start_bonus > 0 ? `<div class="fact"><small>Starting bonus</small><strong class="num">${fmt(L.start_bonus)}</strong></div>` : ''}
       ${L.early_bonus > 0 ? `<div class="fact"><small>Finish early and earn</small><strong class="num">${fmt(L.early_bonus)}</strong><small>for every unused day</small></div>` : ''}
     </div>
-    <div class="lapis instructions"><h3>Your challenge</h3><p style="margin:0">${esc(L.instructions)}</p></div>
+    <div class="lapis instructions"><h3>Your challenge</h3><p>${esc(L.instructions)}</p>
+      ${L.requirements.length ? `<h3 style="margin-top:.8rem">To complete this level you must</h3>${challengeList(L.requirements, false)}
+      <p class="hint" style="color:#d8cfb6;margin:.5rem 0 0">If the level ends before you make these sales, you will have to retry it.</p>` : ''}</div>
     <p class="muted" style="margin:1.2rem auto">Every 25 days of travel uses 1 lb of food and 1 jug of water. Plan your supplies before you leave a city.</p>
     <button class="btn big" id="begin">Begin Level ${L.number} in ${esc(c.name)}</button>
   </div>`;
@@ -228,6 +236,10 @@ function viewCity() {
         <button class="btn ghost" id="end">End Level</button>
       </div>
       ${me.city === 'cairo' ? `<div class="school-card"><div><h3>Trader School</h3><p>Take classes that help you survive the road and strike better deals.</p></div><button class="btn wood" id="to-school">Visit the Trader School</button></div>` : ''}
+      <div class="lapis">
+        <h3>Level ${me.levelInfo.number} challenge</h3>
+        ${challengeList(me.levelInfo.requirements)}
+      </div>
       <div class="lapis">
         <h3>Plan a journey</h3>
         <p style="margin-bottom:.6rem">Day <strong class="num">${me.day}</strong> of ${me.levelInfo.days}. <strong class="num">${left}</strong> days left in this level.</p>
@@ -262,9 +274,15 @@ async function departPrompt() {
 
 async function endLevelPrompt() {
   const L = S.me.levelInfo, left = daysLeft(), bonus = left * (L.early_bonus || 0);
-  const ok = await confirmBox(`End Level ${L.number} now?`,
-    `<p>You have <strong>${left}</strong> unused days.${L.early_bonus ? ` At ${fmt(L.early_bonus)} per day you will earn <strong>${fmt(bonus)}</strong>.` : ''}</p>
-     <p>Make sure you finished the challenge: <em>${esc(L.instructions)}</em></p>`, 'End level', 'Keep trading');
+  const missing = L.requirements.filter((r) => !r.done);
+  const ok = missing.length
+    ? await confirmBox(`You haven\u2019t finished the challenge`,
+      `<p>You still need to:</p>${challengeList(missing, false)}
+       <p>If you end Level ${L.number} now, you will have to <strong>retry the level</strong> from the start with the money and goods you began it with.</p>`,
+      'End level anyway', 'Keep trading', true)
+    : await confirmBox(`End Level ${L.number} now?`,
+      `<p>Challenge complete! You have <strong>${left}</strong> unused days.${L.early_bonus ? ` At ${fmt(L.early_bonus)} per day you will earn <strong>${fmt(bonus)}</strong>.` : ''}</p>`,
+      'End level', 'Keep trading');
   if (!ok) return;
   const res = await act('level/end');
   if (res) { S.summary = res.summary; go('home'); }
@@ -674,7 +692,7 @@ async function arrive() {
     S.perishInfo = `You ran out of ${p.ranOut} ${p.day} days into the journey to ${city(to).name}. That trip needed ${p.need} lb of food and ${p.need} jugs of water.`;
   } else {
     toast(`You reached ${city(to).name}, using ${res.used} lb of food and ${res.used} ${res.used === 1 ? 'jug' : 'jugs'} of water.`);
-    if (res.summary) { S.summary = res.summary; toast('Your days ran out, so the level has ended.'); }
+    if (res.summary) { S.summary = res.summary; toast('Your days ran out, so the level has ended.', res.summary.failed ? 'error' : ''); }
   }
   go('home');
 }
@@ -691,6 +709,23 @@ function viewPerished() {
   </div>`;
   document.getElementById('restart').onclick = async () => {
     if (await act('level/restart')) { S.perishInfo = null; toast('A new caravan sets out. Good luck!'); go('home'); }
+  };
+}
+
+function viewFailed() {
+  const me = S.me, L = me.levelInfo;
+  const missing = (S.summary && S.summary.failed ? S.summary.missing : L.requirements.filter((r) => !r.done));
+  $app.innerHTML = `<div class="parchment level-title">
+    <div class="lv">Level ${L.number}: ${esc(L.name)}</div>
+    <h1>Good trading, but unfortunately you didn’t complete the challenge</h1>
+    <p style="margin:0 auto 1rem">You finished with <strong>${fmt(me.money)}</strong>, but to pass this level you still needed to:</p>
+    <div style="display:inline-block;text-align:left;margin-bottom:1rem">${challengeList(missing, false)}</div>
+    <div class="lapis instructions" style="margin-bottom:1.25rem"><h3>The challenge</h3><p style="margin:0">${esc(L.instructions)}</p></div>
+    <p style="margin:0 auto 1.5rem">Retry Level ${L.number} in ${esc(city(L.start_city).name)} with the ${me.snapshotMoney !== null ? fmt(me.snapshotMoney) : 'money'} and goods you had when this level began.</p>
+    <button class="btn big" id="retry">Retry Level ${L.number}</button>
+  </div>`;
+  document.getElementById('retry').onclick = async () => {
+    if (await act('level/restart')) { S.summary = null; toast('Back to the start. You can do this!'); go('home'); }
   };
 }
 

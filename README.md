@@ -70,12 +70,13 @@ Change any chance or safe-choice count on the teacher page's **Encounters** tab.
 
 - **Supplies:** every 25 days of travel (or part of 25) uses 1 lb food and 1 jug water. A 70-day trip needs 3 of each. Running out means perishing.
 - **Perishing** shows the "sands of time" screen with a button to restart the level with the money and goods they had when it began.
+- **Level challenges:** each level can require specific sales (Level 1: sell salt in Cairo; Level 2: spices in Cairo; Level 3: wine in Sijilmasa; Level 4: paper in Timbuktu and gold in Cairo; Level 5: none). Students see a checklist on the level title page and in every city. If a level ends, by choice or because the days run out, before every required sale is made, they see a "Good trading, but unfortunately you didn't complete the challenge" page and retry the level with the money and goods they started it with.
 - **Ending a level early** pays the per-day bonus (default $2) for each unused day. When the days run out, the level ends automatically. Money and goods carry into the next level.
 - **Caravans:** any student can start one with a password. Up to 5 traders per caravan. Caravans rank by average wealth.
 
 ## Teacher tools
 
-- **Levels:** codes, days, instructions, starting city, starting bonus, early-finish bonus.
+- **Levels:** codes, days, instructions, starting city, starting bonus, early-finish bonus, and required sales (pick an item and a city from dropdowns; the item list shows only what that city buys).
 - **Traders:** see everyone's level, status, location, money and goods. Move a trader to any level, reset a forgotten password, remove from a caravan, or delete.
 - **Give bonuses & skills:** money, items and/or a free Trader School class to traders you check off, a whole caravan or the whole class, with a reason that appears in their log. You can also take a class away.
 - **Encounters:** how often each road event happens and how many of the 10 choices are safe.
